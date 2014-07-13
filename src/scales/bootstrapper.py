@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 '''
+Module for libspike for bootstrapping
+
 spike – a package manager running on top of git
 
 Copyright © 2012, 2013  Mattias Andrée (maandree@member.fsf.org)
@@ -25,50 +27,60 @@ from library.gitcord import *
 
 class Bootstrapper():
     '''
-    Module for libspike for bootstrapping
+    Bootstraps some directories using an aggregator
     '''
-    
-    @staticmethod
-    def queue(dir, repositories, update, aggregator):
-        '''
-        Queue a directory for bootstrapping
-        
-        @param  dir:str                        The directory
-        @param  repositories:set<str>          Filled with visited directories
-        @param  update:list<str>               Filled with queued directories
-        @param  aggregator:(dir:, int=0)→void  Feed the directory if it gets queued
-        '''
-        dir += '' if dir.endswith('/') else '/'
-        repositories.add(os.path.realpath(dir))
-        if not os.path.exists(dir + '.git/frozen.spike'):
-            update.append(dir)
-            aggregator(dir, 0)
-    
-    
-    @staticmethod
-    def queue_repositores(dirs, repositories, update, aggregator):
-        '''
-        List, for update, directories that are not frozen
-        
-        @param  dirs:itr<str>                  The candidate directories
-        @param  repositories:set<str>          Filled with visited directories
-        @param  update:list<str>               Filled with queued directories
-        @param  aggregator:(dir:, int=0)→void  Feed the directory if it gets queued
-        '''
-        for file in dirs:
-            if os.path.isdir(file):
-                for repo in os.listdir(file):
-                    repo = os.path.realpath(file + '/' + repo)
-                    if repo not in repositories:
-                        Bootstrapper.queue(repo, repositories, update, aggregator)
-    
-    
-    @staticmethod
-    def update(repository, verify_signatures):
-        '''
-        @param   repository:str          The repository to update
-        @param   verify_signatures:bool  Whether to verify signatures
-        @return  :bool                   Whether the update was successful
-        '''
-        return Gitcord(repository).update_branch(verify_signatures)
 
+    def __init__(self, aggregator):
+        '''
+        @param  aggregator:(dir:, int=0)→void  Feed the directory if it gets
+                                               queued
+        '''
+        self._aggregator = aggregator
+        self._repositories = set()
+        self._update = []
+
+    def queue(self, dir):
+        '''
+        Queue a directory for bootstrapping if it is not frozen
+
+        @param  dir:str  The directory
+        '''
+        dir = os.path.realpath(dir)
+        if not os.path.isdir(dir):
+            raise NotADirectoryError('Not a directory: %s' % dir)
+        self._repositories.add(os.path.realpath(dir))
+        if not os.path.exists(os.path.join(dir, '.git/frozen.spike')):
+            self._update.append(dir)
+            self._aggregator(dir, 0)
+
+    def queue_repository(self, dir):
+        '''
+        Queue a repository's directory for bootstrapping that are not frozen
+
+        @param  dir:str  The directory of the candidate repository
+        '''
+        dir = os.path.realpath(dir)
+        if not os.path.isdir(dir):
+            raise NotADirectoryError('Not a directory: %s' % dir)
+        for repo in os.listdir(dir):
+            if repo == '.git':
+                continue
+            repo = os.path.join(dir, repo)
+            if os.path.isdir(repo) and repo not in self._repositories:
+                self.queue(repo)
+
+    def update(self, verify_signatures):
+        '''
+        @param   verify_signatures:bool  Whether to verify signatures
+        @return  :list<str>              All the directories that failed to
+                                         update
+        '''
+        failures = []
+        for directory in self._update:
+            self._aggregator(directory, 1)
+            if Gitcord(directory).update_branch(verify_signatures):
+                self._aggregator(directory, 2)
+            else:
+                self._aggregator(directory, 3)
+                failures.append(directory)
+        return failures

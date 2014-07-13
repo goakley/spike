@@ -554,8 +554,8 @@ class Spike():
                 Feed a directory path and 2 when a directory bootstrap process has ended.
             '''
             def __init__(self):
-                self.colour_map = (3, 4, 2)
-                self.message_map = ('QUEUED', 'WORKING', 'DONE')
+                self.colour_map = (3, 4, 2, 1)
+                self.message_map = ('QUEUED', 'WORKING', 'DONE', 'ERROR')
             def __call__(self, directory, state):
                 print('\033[01;3%im%s [%s]\033[00m' % (self.colour_map[state], directory, self.message_map[state]))
         

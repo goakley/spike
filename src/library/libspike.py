@@ -122,8 +122,8 @@ class LibSpike(LibSpikeHelper):
                         if os.getenv('SPIKE_DEBUG', '').lower() == 'yes':
                             import traceback
                             traceback.print_exc()
-    
-    
+
+
     @staticmethod
     def bootstrap(aggregator, verify):
         '''
@@ -140,27 +140,25 @@ class LibSpike(LibSpikeHelper):
         LibSpike.lock(True)
         if not os.path.exists(SPIKE_PATH):
             return 12
-        
-        update = []
-        repositories = set()
-        
+
+        bootstrapper = Bootstrapper(aggregator)
+
         # List Spike for update if not frozen
-        Bootstrapper.queue(SPIKE_PATH, repositories, update, aggregator)
-        
+        bootstrapper.queue(SPIKE_PATH)
+
         # Look for repositories and list, for update, those that are not frozen
         repos = [SPIKE_PATH + 'repositories'] + LibSpike.get_confs('repositories')
-        Bootstrapper.queue_repositores(repos, repositories, update, aggregator)
-        
+        for repo in repos:
+            bootstrapper.queue_repository(repo)
+
         # Update Spike and repositories, those that are listed
-        for repo in update:
-            aggregator(repo, 1)
-            if not Bootstrapper.update(repo, verify):
-                return 24
-            aggregator(repo, 2)
-        
+        failures = bootstrapper.update(verify)
+        if failures:
+            return 24
+
         return 0
-    
-    
+
+
     @staticmethod
     def find_scroll(aggregator, patterns, installed = True, notinstalled = True):
         '''
