@@ -85,7 +85,9 @@ class Gitcord():
             proc = Popen(command, cwd = self.dir, stdout = sys.stderr, stdin = sys.stdin, stderr = sys.stderr)
             proc.wait()
             return proc.returncode
-        except:
+        except BaseException as e:
+            if isinstance(e, KeyboardInterrupt):
+                raise
             if proc is not None:
                 return 255 if proc.returncode == 0 else proc.returncode
             else:
