@@ -18,365 +18,284 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>.
 '''
+import argparse
+import re
 import sys
 
 from auxiliary.printhacks import *
 
 
-
-ARGUMENTLESS = 0
-'''
-Option takes no arguments
-'''
-
-ARGUMENTED = 1
-'''
-Option takes one argument per instance
-'''
-
-VARIADIC = 2
-'''
-Option consumes all following arguments
-'''
-
-
-
-class ArgParser():
+def _build_option_help(opt, colour):
     '''
-    Simple argument parser, cannibalised from ponysay where it was cannibalised from paradis
+    turns an option tuple into (flag output, help output)
     '''
-    
-    def __init__(self, program, description, usage, long_description = None, tty = True):
-        '''
-        Constructor.
-        The short description is printed on same line as the program name
-        
-        @param  program:str            The name of the program
-        @param  description:str        Short, single-line, description of the program
-        @param  usage:str              Formated, multi-line, usage text
-        @param  long_description:str?  Long, multi-line, description of the program, may be `None`
-        @param  tty:bool               Whether the terminal is an not so capable virtual terminal
-        '''
-        self.__program = program
-        self.__description = description
-        self.__usage = usage
-        self.__long_description = long_description
-        self.__arguments = []
-        self.opts = {}
-        self.optmap = {}
-        self.__tty = tty
-    
-    
-    
-    def add_argumentless(self, alternatives, help = None):
-        '''
-        Add option that takes no arguments
-        
-        @param  alternatives:list<str>  Option names
-        @param  help:str?               Short description, use `None` to hide the option
-        '''
-        self.__arguments.append((ARGUMENTLESS, alternatives, None, help))
-        stdalt = alternatives[0]
-        self.opts[stdalt] = None
-        for alt in alternatives:
-            self.optmap[alt] = (stdalt, ARGUMENTLESS)
-    
-    
-    def add_argumented(self, alternatives, arg, help = None):
-        '''
-        Add option that takes one argument
-        
-        @param  alternatives:list<str>  Option names
-        @param  arg:str                 The name of the takes argument, one word
-        @param  help:str?               Short description, use `None` to hide the option
-        '''
-        self.__arguments.append((ARGUMENTED, alternatives, arg, help))
-        stdalt = alternatives[0]
-        self.opts[stdalt] = None
-        for alt in alternatives:
-            self.optmap[alt] = (stdalt, ARGUMENTED)
-    
-    
-    def add_variadic(self, alternatives, arg, help = None):
-        '''
-        Add option that takes all following argument
-        
-        @param  alternatives:list<str>  Option names
-        @param  arg:str                 The name of the takes arguments, one word
-        @param  help:str?               Short description, use `None` to hide the option
-        '''
-        self.__arguments.append((VARIADIC, alternatives, arg, help))
-        stdalt = alternatives[0]
-        self.opts[stdalt] = None
-        for alt in alternatives:
-            self.optmap[alt] = (stdalt, VARIADIC)
-    
-    
-    
-    def test_exclusiveness(self, execprog, exclusives, longmap, do_exit = False):
-        '''
-        Test for option conflicts
-        
-        @param   execprog:str            The program command
-        @param   exclusives:set<str>     Exclusive options
-        @param   longmap:dict<str, str>  Map from short to long
-        @param   do_exit:bool            Exit program on conflict
-        @return  :bool                   Whether at most one exclusive option was used
-        '''
-        used = []
-        
-        for opt in self.opts:
-            if (self.opts[opt] is not None) and (opt in exclusives):
-                used.append((opt, longmap[opt] if opt in longmap else None))
-        
-        if len(used) > 1:
-            msg = execprog + ': conflicting options:'
-            for opt in used:
-                if opt[1] is None:
-                    msg += ' ' + opt[0]
-                else:
-                    msg += ' ' + opt[0] + '(' + opt[1] + ')'
-            printerr(msg)
-            if do_exit:
-                exit(1)
-            return False
-        return True
-    
-    
-    def test_allowed(self, execprog, allowed, longmap, do_exit = False):
-        '''
-        Test for out of context option usage
-        
-        @param   execprog:str            The program command
-        @param   allowed:set<str>        Allowed options
-        @param   longmap:dict<str, str>  Map from short to long
-        @param   do_exit:bool            Exit program on incorrect usage
-        @return  :bool                   Whether only allowed options was used
-        '''
-        for opt in self.opts:
-            if (self.opts[opt] is not None) and (opt not in allowed):
-                msg = execprog + ': option used out of context: ' + opt
-                if opt in longmap:
-                    msg += '(' + longmap[opt] + ')'
-                printerr(msg)
-                if do_exit:
-                    exit(1)
-                return False
-        return True
-    
-    
-    def test_files(self, execprog, min_count, max_count, do_exit = False):
-        '''
-        Test the correctness of the number of used non-option arguments
-        
-        @param   execprog:str    The program command
-        @param   min_count:int   The minimum allowed number of files
-        @param   max_count:int?  The maximum allowed number of files, `None` for unlimited
-        @param   do_exit:bool    Exit program on incorrectness
-        @return  :bool           Whether the usage was correct
-        '''
-        n = len(self.files)
-        rc = min_count <= n
-        msg = execprog + ': too few unnamed arguments: %i but %i needed' % (n, min_count)
-        if rc and (max_count is not None):
-            rc = n <= max_count
-            if not rc:
-                msg = execprog + ': too many unnamed arguments: %i but only %i allowed' % (n, max_count)
-        if do_exit and not rc:
-            exit(1)
-        return rc
-    
-    
-    
-    def parse(self, argv = sys.argv):
-        '''
-        Parse arguments
-        
-        @param   args:list<str>  The command line arguments, should include the execute file at index 0, `sys.argv` is default
-        @return  :bool           Whether no unrecognised option is used
-        '''
-        self.argcount = len(argv) - 1
-        self.files = []
-        
-        argqueue = []
-        optqueue = []
-        deque = []
-        for arg in argv[1:]:
-            deque.append(arg)
-        
-        dashed = False
-        tmpdashed = False
-        get = 0
-        dontget = 0
-        self.rc = True
-        
-        def unrecognised(arg):
-            '''
-            Warn about unrecognised option
-            
-            @param  arg:str  The option
-            '''
-            sys.stderr.write('%s: warning: unrecognised option %s\n' % (self.__program, arg))
-            self.rc = False
-        
-        while len(deque) != 0:
-            arg = deque[0]
-            deque = deque[1:]
-            if (get > 0) and (dontget == 0):
-                get -= 1
-                argqueue.append(arg)
-            elif tmpdashed:
-                self.files.append(arg)
-                tmpdashed = False
-            elif dashed:        self.files.append(arg)
-            elif arg == '++':   tmpdashed = True
-            elif arg == '--':   dashed = True
-            elif (len(arg) > 1) and (arg[0] in ('-', '+')):
-                if (len(arg) > 2) and (arg[:2] in ('--', '++')):
-                    if dontget > 0:
-                        dontget -= 1
-                    elif (arg in self.optmap) and (self.optmap[arg][1] == ARGUMENTLESS):
-                        optqueue.append(arg)
-                        argqueue.append(None)
-                    elif '=' in arg:
-                        arg_opt = arg[:arg.index('=')]
-                        if (arg_opt in self.optmap) and (self.optmap[arg_opt][1] >= ARGUMENTED):
-                            optqueue.append(arg_opt)
-                            argqueue.append(arg[arg.index('=') + 1:])
-                            if self.optmap[arg_opt][1] == VARIADIC:
-                                dashed = True
-                        else:
-                            unrecognised(arg)
-                    elif (arg in self.optmap) and (self.optmap[arg][1] == ARGUMENTED):
-                        optqueue.append(arg)
-                        get += 1
-                    elif (arg in self.optmap) and (self.optmap[arg][1] == VARIADIC):
-                        optqueue.append(arg)
-                        argqueue.append(None)
-                        dashed = True
-                    else:
-                        unrecognised(arg)
-                else:
-                    sign = arg[0]
-                    i = 1
-                    n = len(arg)
-                    while i < n:
-                        narg = sign + arg[i]
-                        i += 1
-                        if (narg in self.optmap):
-                            if self.optmap[narg][1] == ARGUMENTLESS:
-                                optqueue.append(narg)
-                                argqueue.append(None)
-                            elif self.optmap[narg][1] == ARGUMENTED:
-                                optqueue.append(narg)
-                                nargarg = arg[i:]
-                                if len(nargarg) == 0:
-                                    get += 1
-                                else:
-                                    argqueue.append(nargarg)
-                                break
-                            elif self.optmap[narg][1] == VARIADIC:
-                                optqueue.append(narg)
-                                nargarg = arg[i:]
-                                argqueue.append(nargarg if len(nargarg) > 0 else None)
-                                dashed = True
-                                break
-                        else:
-                            unrecognised(arg)
-            else:
-                self.files.append(arg)
-        
-        i = 0
-        n = len(optqueue)
-        while i < n:
-            opt = optqueue[i]
-            arg = argqueue[i]
-            i += 1
-            opt = self.optmap[opt][0]
-            if (opt not in self.opts) or (self.opts[opt] is None):
-                self.opts[opt] = []
-            self.opts[opt].append(arg)
-        
-        for arg in self.__arguments:
-            if (arg[0] == VARIADIC):
-                varopt = self.opts[arg[1][0]]
-                if varopt is not None:
-                    additional = ','.join(self.files).split(',') if len(self.files) > 0 else []
-                    if varopt[0] is None:
-                        self.opts[arg[1][0]] = additional
-                    else:
-                        self.opts[arg[1][0]] = varopt[0].split(',') + additional
-                    self.files = []
-                    break
-        
-        self.message = ' '.join(self.files) if len(self.files) > 0 else None
-        
-        return self.rc
-    
-    
-    
-    def help(self):
-        '''
-        Prints a colourful help message
-        '''
-        print('\033[1m%s\033[21m %s %s' % (self.__program, '-' if self.__tty else '—', self.__description))
-        print()
-        if self.__long_description is not None:
-            print(self.__long_description)
-        print()
-        
-        print('\033[1mUSAGE:\033[21m', end='')
-        first = True
-        for line in self.__usage.split('\n'):
-            if first:
-                first = False
-            else:
-                print('    or', end='')
-            print('\t%s' % (line))
-        print()
-        
-        print('\033[1mSYNOPSIS:\033[21m')
-        (lines, lens) = ([], [])
-        for opt in self.__arguments:
-            opt_type = opt[0]
-            opt_alts = opt[1]
-            opt_arg = opt[2]
-            opt_help = opt[3]
-            if opt_help is None:
-                continue
-            (line, l) = ('', 0)
-            first = opt_alts[0]
-            last = opt_alts[-1]
-            alts = ('  ', last) if first is last else (first, last)
-            for opt_alt in alts:
-                if opt_alt is alts[-1]:
-                    line += '%colour%' + opt_alt
-                    l += len(opt_alt)
-                    if   opt_type == ARGUMENTED:  line += ' \033[4m%s\033[24m'      % (opt_arg);  l += len(opt_arg) + 1
-                    elif opt_type == VARIADIC:    line += ' [\033[4m%s\033[24m...]' % (opt_arg);  l += len(opt_arg) + 6
-                else:
-                    line += '    \033[2m%s\033[22m  ' % (opt_alt)
-                    l += len(opt_alt) + 6
-            lines.append(line)
-            lens.append(l)
-        
-        col = max(lens)
-        col += 8 - ((col - 4) & 7)
-        index = 0
-        for opt in self.__arguments:
-            opt_help = opt[3]
-            if opt_help is None:
-                continue
-            first = True
-            colour = '36' if (index & 1) == 0 else '34'
-            print(lines[index].replace('%colour%', '\033[%s;1m' % (colour)), end=' ' * (col - lens[index]))
-            for line in opt_help.split('\n'):
-                if first:
-                    first = False
-                    print('%s' % (line), end='\033[00m\n') # 21;39m
-                else:
-                    print('%s\033[%sm%s\033[00m' % (' ' * col, colour, line)) # 39m
-            index += 1
-        
-        print()
+    FLAGTEXT = '\033[2m{shortflag}\033[22m  \033[{colour};1m{longflag} ' \
+        '\033[4m{metavar}\033[24m'
 
+    flags = sorted(list(opt[0]), reverse=True)
+    nargs = opt[1]['nargs'] if 'nargs' in opt[1] \
+        else 0 if 'action' in opt[1] and opt[1]['action'].startswith('store_') \
+        else 1
+
+    flagtext = FLAGTEXT.format(
+        shortflag=flags[0] if len(flags[0]) == 2 else '  ',
+        colour=colour,
+        longflag=flags[-1],
+        metavar=('' if nargs == 0 else opt[1]['metavar']) +
+        ('...' if nargs == '+' else '')
+    )
+    helptext = opt[1]['help'] if 'help' in opt[1] else '[No help]'
+
+    return (flagtext, helptext)
+
+
+def _group_by_exclusive(opts, exclusives):
+    '''
+    groups a list of flags into a list of list of opts based on exclusivity
+    each sublist contains mutually exclusive flags
+    '''
+    eligibles = [[opt for opt in opts if opt in exclusive]
+                 for exclusive in exclusives]
+    remainder = [[opt] for opt in opts
+                 if not any([opt in eligible for eligible in eligibles])]
+    remainder.extend(filter(list, eligibles))
+    return remainder
+
+
+def _build_command_help(cmd, colour, exclusives):
+    '''
+    turns a command tuple into (flag output, help output, slave output)
+    slave output will be None if there are no slaves
+    '''
+    option_result = _build_option_help(cmd, colour)
+    if not cmd[1]['options']:
+        return (option_result[0], option_result[1], None)
+
+    optgroups = _group_by_exclusive(cmd[1]['options'], exclusives)
+    opttext = '\033[{}mflags: '.format(colour)
+    opttext += ' '.join(['[' + ' | '.join(grp) + ']' for grp in optgroups])
+
+    return (option_result[0], option_result[1], opttext)
+
+
+class ArgumentCommandParser(argparse.ArgumentParser):
+    '''
+    The ArgumentCommandParser uses a command-based idiom for parsing arguments
+
+    Each ArgumentCommandParser must contain at least one command, added with
+    `add_command`, which takes similar arguments as `add_argument`.
+
+    This parser will pass all trailing argument that are not flags to the
+    command, making `parse_known_args` meaningless and thus not implemented.
+    '''
+
+    def __init__(self, *args, **kwargs):
+        self._commands = [(
+            set(['-h', '--help']),
+            {'options': [],
+             'nargs': 0,
+             'help': 'Print this help'}
+        )]
+        self._options = []
+        self._exclusives = []
+        self._multis = set()
+        if 'tty' in kwargs:
+            del kwargs['tty']
+        self._tty = kwargs.get('tty')
+        super().__init__(*args, **kwargs)
+        # set _options again afterwards to remove the --help flag
+        self._options = []
+
+    def add_argument(self, *args, **kwargs):
+        super().add_argument(*args, **kwargs)
+        self._options.append((set(args), kwargs))
+        if kwargs.get('nargs') == '+':
+            self._multis.update([re.sub(r'^-+', '', arg).replace('-', '_')
+                                 for arg in args])
+
+    def add_command(self, shortflag, longflag, **kwargs):
+        '''
+        Adds a top-level command to the parser
+
+        This method is incredibly similar to `add_argument`, with a few key
+        differences.  First, two arguments must be passed, the short and long
+        flags for the command.  The short flag may be `None`.  Second, a new
+        `options` argument is added, taking in all the flags that may be used
+        with this command.  Third, the `action` argument is removed and the
+        purpose of the `nargs` argument is modified; passing an `nargs` of 0
+        is valid for this method, and implies that the command takes no
+        arguments.
+
+        Commands are mutually exclusive.
+        This method must be called at least once.
+        Exactly one top-level command must always be provided during parsing.
+
+        @param options:list<str> Flags that may be used with this command
+        '''
+        if 'action' in kwargs:
+            raise TypeError('add_command() got an unexpected keyword argument '
+                            '\'action\'')
+        args = [longflag] if shortflag is None else [shortflag, longflag]
+
+        kwargs.setdefault('options', [])
+        options = kwargs['options']
+        nargs = kwargs.get('nargs')
+        metavar = kwargs.get('metavar')
+
+        del kwargs['options']
+        if nargs is not None:
+            del kwargs['nargs']
+        if metavar is not None:
+            del kwargs['metavar']
+        kwargs['action'] = 'store_true'
+        super().add_argument(*args, **kwargs)
+
+        kwargs['nargs'] = nargs
+        kwargs['options'] = options
+        kwargs['metavar'] = metavar
+
+        self._commands.append((set(args), kwargs))
+
+    def add_exclusivity(self, *args):
+        '''
+        Treats all given argument flags as exclusive to each other
+
+        Note that every flag MUST have been added to the parser already
+        through `add_argument`.
+
+        @param *args:list<str> Flags that are mutually exclusive
+        '''
+        argset = set(args)
+        for arg in args:
+            if not [arg in opt[0] for opt in self._options]:
+                raise argparse.ArgumentError(arg, 'does not exist')
+        self._exclusives.append(set(sum(
+            [list(opt[0]) for opt in self._options for arg in argset
+             if arg in opt[0]], []
+        )))
+
+    def parse_args(self, args=None, namespace=None):
+        '''
+        Behaves similar to the parent `parse_args`
+
+        The only difference in this `parse_args` is that the command itself
+        will be passed out under the 'COMMAND' attribute as the long flag with
+        no dashes(so '--option-made' will be 'option_made') and all the
+        remaining arguments will be passed out in the namespace under the
+        attribute 'ARGS' (i.e. `namespace.ARG` will give the args to the
+        command)
+        '''
+        argset = set((args or sys.argv)[1:])
+
+        # ensure at least one command exists
+        commands = [cmds for cmds in self._commands for arg in args
+                    if arg in cmds[0]]
+        if not commands:
+            self.error('at least one command is required')
+        if len(commands) > 1:
+            self.error('only one command may be used')
+        command = commands[0]
+
+        # ensure no exclusive options occur together
+        for exclusive in self._exclusives:
+            if len([arg for arg in argset
+                    if any([arg in elem for elem in exclusive])]) > 1:
+                self.error('mutually exclusive options used')
+
+        # ensure no foreign flags are set
+        fulloptions = sum([list(option[0]) for opt in command[1]['options']
+                           for option in self._options if opt in option[0]],
+                          [])
+        present = [arg for arg in argset if arg in fulloptions]
+        conflicting = [flag for flag in present if flag not in fulloptions]
+        if conflicting:
+            raise argparse.ArgumentError(None, '%s '
+                                         'has no effect in this command' %
+                                         conflicting[0])
+
+        # check for unknown flags
+        unknown = [arg for arg in argset
+                   if arg[0] == '-'
+                   and arg not in command[0]
+                   and not any([arg in option[0] for option in self._options])]
+        if unknown:
+            raise argparse.ArgumentError(None, '%s is not a recognized flag' %
+                                         unknown[0])
+
+        # store the command args in '_' after verifying correctness
+        namespace, remainder = super().parse_known_args(args, namespace)
+        # comma-separate the multi-args if needed
+        for multi in self._multis:
+            if getattr(namespace, multi, None):
+                setattr(namespace, multi,
+                        sum([arg.split(',')
+                             for arg in getattr(namespace, multi)], []))
+        remainder = remainder[1:]
+        nargs = command[1]['nargs']
+        if nargs is None:
+            if len(remainder) != 1:
+                self.error('expected 1 argument (got %s)' % len(remainder))
+            setattr(namespace, '_', remainder[0])
+        if type(nargs) == int:
+            if len(remainder) != nargs:
+                self.error('expected %s arguments (got %s)' %
+                           (nargs, len(remainder)))
+            setattr(namespace, '_', remainder)
+        elif command[1]['nargs'] == '+':
+            if len(remainder) < 1:
+                self.error('expected one or more arguments (got %s)'
+                           % len(remainder))
+            # the following line allows for splitting on commas
+            sum([arg.split(',') for arg in remainder], [])
+            setattr(namespace, 'ARGS', remainder)
+        else:
+            raise NotImplementedError()
+
+        # add the COMMAND attribute
+        setattr(namespace, 'COMMAND',
+                sorted(list(command[0]))[0][2:].replace('-', '_'))
+
+        return namespace
+
+    def parse_known_args(self, *args, **kwargs):
+        '''
+        Not Implemented
+        '''
+        raise NotImplementedError()
+
+    def print_help(self, file=sys.stdout):
+        output = []
+
+        output.append('\033[1m%s\033[21m %s %s\n\n' %
+                      (self.prog, '-' if self._tty else '—', self.description))
+        output.append('\033[1mUSAGE:\033[21m\t%s\n\n' % self.usage)
+        output.append('\033[1mSYNOPSIS:\033[21m\n')
+
+        primarycolour = True
+        indent = 8 + max([len(_build_option_help(cmd, 0)[0])
+                          for cmd in (self._commands + self._options)])
+
+        output.append('\033[1m  COMMANDS:\033[21m\n')
+        for cmd in self._commands:
+            primarycolour = not primarycolour
+            flagtext, helptext, slavetext = _build_command_help(
+                cmd, 34 if primarycolour else 36, self._exclusives
+            )
+            output.append(('    ' + flagtext).ljust(indent) +
+                          helptext + '\033[00m\n')
+            if slavetext is not None:
+                output.append(''.ljust(indent - 25) + slavetext + '\033[00m\n')
+        output.append('\n')
+
+        output.append('\033[1m  FLAGS:\033[21m\n')
+        for opt in self._options:
+            primarycolour = not primarycolour
+            flagtext, helptext = _build_option_help(
+                opt, 34 if primarycolour else 36
+            )
+            output.append(('    ' + flagtext).ljust(indent) +
+                          helptext + '\033[00m\n')
+        output.append('\n')
+
+        # ensure proper utf-8 output
+        file.buffer.write(''.join(output).encode('utf-8'))

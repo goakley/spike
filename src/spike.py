@@ -23,7 +23,7 @@ import os
 from subprocess import Popen
 
 from library.libspike import *
-from auxiliary.argparser import *
+from auxiliary.argparser import ArgumentCommandParser
 from auxiliary.printhacks import *
 
 
@@ -96,7 +96,7 @@ class Spike():
         '''
         self.execprog = args[0].split('/')[-1]
         
-        usage = self.prog + ' [command [option]... [FILE... | FILE... SCROLL | SCROLL...]]'
+        usage = self.prog + ' [command] [option]... [FILE... | FILE... SCROLL | SCROLL...]'
         usage = usage.replace('spike',   '\033[35m' 'spike'   '\033[00m')
         usage = usage.replace('command', '\033[33m' 'command' '\033[00m')
         usage = usage.replace('option',  '\033[33m' 'option'  '\033[00m')
@@ -110,401 +110,251 @@ class Spike():
             usage = usage.replace(sym, '\033[02m' + sym + '\033[22m')
         usage = usage.replace('\0', '\033[')
         
-        opts = ArgParser('spike', 'a package manager running on top of git', usage,
-                         'spike is used to spike your system with new ponies or and new versions\n'
-                         'of ponies (known on other systems as packages). spike the capaility of\n'
-                         'not only installing ponies, but also archive an installation and\n'
-                         'simply roll back to it in case the system broke, an must have feature\n'
-                         'on unstable OS:es. spike uses so called scrolls to install ponies,\n'
-                         'these are written, for maximum simplicity and portability, in Python 3\n'
-                         'and a collection of these are distributed with spike and updated when\n'
-                         'spike is updated. But you can add scroll repositories to spike on your\n'
-                         'local installation.', tty)
+        opts = ArgumentCommandParser(
+            'spike', usage=usage,
+            description='a package manager running on top of git\n\n'
+            'spike is used to spike your system with new ponies or and new versions\n'
+            'of ponies (known on other systems as packages). spike the capaility of\n'
+            'not only installing ponies, but also archive an installation and\n'
+            'simply roll back to it in case the system broke, an must have feature\n'
+            'on unstable OS:es. spike uses so called scrolls to install ponies,\n'
+            'these are written, for maximum simplicity and portability, in Python 3\n'
+            'and a collection of these are distributed with spike and updated when\n'
+            'spike is updated. But you can add scroll repositories to spike on your\n'
+            'local installation.',
+            tty=tty
+        )
         
-        opts.add_argumentless(['-v', '--version'],                    help = 'Print program name and version')
-        opts.add_argumentless(['-h', '--help'],                       help = 'Print this help')
-        opts.add_argumentless(['-c', '--copyright'],                  help = 'Print copyright information')
+        opts.add_command('-v', '--version', nargs=0,
+                         help='Print program name and version')
+        opts.add_command('-c', '--copyright', nargs=0,
+                         help='Print copyright information')
+
+        opts.add_command('-B', '--bootstrap', nargs=0,
+                         help='Update spike and scroll repositories',
+                         options=['--no-verify'])
+        opts.add_command('-F', '--find', nargs='+', metavar='SCROLL',
+                         help='Find a scroll either by name or by ownership',
+                         options=['--owner', '--written'])
+        opts.add_command('-W', '--write', nargs='+', metavar='SCROLL',
+                         help='Install a pony (package) from scroll',
+                         options=['--pinpal', '--private', '--asdep', '--asexplicit', '--nodep', '--force', '--shred'])
+        opts.add_command('-U', '--update', nargs=0,
+                         help='Update to new versions of the installed ponies',
+                         options=['--pinpal', '--ignore', '--private', '--shred'])
+        opts.add_command('-E', '--erase', nargs='+', metavar='SCROLL',
+                         help='Uninstall a pony',
+                         options=['--pinpal', '--private', '--shred'])
+        opts.add_command(None, '--demote', nargs='+', metavar='SCROLL',
+                         help='Demote pony to a dependency',
+                         options=['--private'])
+        opts.add_command(None, '--promote', nargs='+', metavar='SCROLL',
+                         help='Promote pony to explicitly installed',
+                         options=['--private'])
+        opts.add_command('-X', '--ride', nargs=1, metavar='SCROLL',
+                         help='Execute a scroll after best effort',
+                         options=['--private'])
+        opts.add_command('-R', '--read', nargs='+', metavar='SCROLL',
+                         help='Get scroll information',
+                         options=['--list', '--info', '--written'])
+        opts.add_command('-C', '--claim', nargs='+', metavar='FILE',
+                         help='Claim one or more files as owned by a pony',
+                         options=['--recursive', '--entire', '--private', '--force'])
+        opts.add_command('-D', '--disclaim', nargs='+', metavar='FILE',
+                         help='Disclaim one or more files as owned by a pony',
+                         options=['--recursive', '--private'])
+        opts.add_command('-A', '--archive', nargs=1, metavar='ARCHIVE',
+                         help='Create an archive of everything that is currently installed.',
+                         options=['--scrolls'])
+        opts.add_command(None, '--restore-archive', nargs=1, metavar='ARCHIVE',
+                         help='Roll back to an archived state of the system',
+                         options=['--shared', '--full', '--old', '--downgrade', '--upgrade', '--shred'])
+        opts.add_command('-N', '--clean', nargs=0,
+                         help='Uninstall unneeded ponies',
+                         options=['--private', '--shred'])
+        opts.add_command('-P', '--proofread', nargs='+', metavar='SCROLL',
+                         help='Verify that a scroll is correct')
+        opts.add_command('-S', '--example-shot', nargs='+', metavar='SCROLL',
+                         help='Display example shot for scrolls',
+                         options=['--viewer', '--all-at-once'])
+        opts.add_command('-I', '--interactive', nargs=0,
+                         help='Start in interative graphical terminal mode (supports installation and uninstallation only)',
+                         options=['--shred'])
+        opts.add_command('-3', '--sha3sum', nargs='+', metavar='FILE',
+                         help='Calculate the SHA3 checksums for files (do not expect files to be listed in order)')
+
+        opts.add_argument('-o', '--owner', action='store_true',
+                          help='Find owner pony for file')
+        opts.add_argument('-w', '--written', choices=['y', 'n'], metavar='boolean',
+                          help='Search only for installed (\'y\') or not installed (\'n\') ponies')
+        opts.add_argument(      '--pinpal', metavar='ROOT',
+                                help='Mounted system for which to do installation or unstallation')
+        opts.add_argument('-u', '--private', action='store_true',
+                          help='Private pony installation')
+        opts.add_argument(      '--asdep', action='store_true',
+                                help='Install pony as implicitly installed (a dependency)')
+        opts.add_argument(      '--asexplicit', action='store_true',
+                                help='Install pony as explicitly installed (no longer a dependency)')
+        opts.add_argument(      '--nodep', action='store_true',
+                                help='Do not install dependencies')
+        opts.add_argument(      '--force', action='store_true',
+                                help='Ignore file claims')
+        opts.add_argument('-i', '--ignore', nargs='+', metavar='SCROLL',
+                          help='Ignore update of a pony')
+        opts.add_argument('-l', '--list', action='store_true',
+                          help='List files claimed (done at installation) for a pony')
+        opts.add_argument('-f', '--info', nargs='+', metavar='FIELD',
+                          help='Retrieve a specific scroll information field')
+        opts.add_argument(      '--recursive', action='store_true',
+                                help='Recursively claim or disclaim directories')
+        opts.add_argument(      '--entire', action='store_true',
+                                help='Recursively claim directories and their future content')
+        opts.add_argument('-s', '--scrolls', action='store_true',
+                          help='Do only archive scrolls, no installed files')
+        opts.add_argument(      '--shared', action='store_true',
+                                help='Reinstall only ponies that are currently installed and archived')
+        opts.add_argument(      '--full', action='store_true',
+                                help='Uninstall ponies that are not archived')
+        opts.add_argument(      '--old', action='store_true',
+                                help='Reinstall only ponies that are currently not installed')
+        opts.add_argument(      '--downgrade', action='store_true',
+                                help='Do only perform pony downgrades')
+        opts.add_argument(      '--upgrade', action='store_true',
+                                help='Do only perform pony upgrades')
+        opts.add_argument(      '--shred', action='store_true',
+                                help='Perform secure removal with `shred` when removing old files')
+        opts.add_argument(      '--no-verify', action='store_true',
+                                help='Skip verification of signatures')
+        opts.add_argument('-a', '--all-at-once', action='store_true',
+                          help='Display all example shots in one single process instance')
+        opts.add_argument(      '--viewer', metavar='VIEWER',
+                                help='Select image viewer for example shots')
+
+        opts.add_exclusivity('-o', '-w')
+        opts.add_exclusivity('--pinpal', '-u')
+        opts.add_exclusivity('--pinpal', '--private')
+        opts.add_exclusivity('--asdep', '--asexplicit')
+        opts.add_exclusivity('-l', '-f')
+        opts.add_exclusivity('--recursive', '--entire')
+        opts.add_exclusivity('--shared', '--full', '--old')
+        opts.add_exclusivity('--downgrade', '--upgrade')
         
-        opts.add_argumentless(['-B', '--bootstrap'],                  help = 'Update spike and scroll repositories\n'
-                                                             'slaves: [--no-verify]')
-        opts.add_argumentless(['-F', '--find'],                       help = 'Find a scroll either by name or by ownership\n'
-                                                             'slaves: [--owner | --written=]')
-        opts.add_argumentless(['-W', '--write'],                      help = 'Install a pony (package) from scroll\n'
-                                                             'slaves: [--pinpal= | --private] [--asdep | --asexplicit] [--nodep] [--force] [--shred]')
-        opts.add_argumentless(['-U', '--update'],                     help = 'Update to new versions of the installed ponies\n'
-                                                             'slaves: [--pinpal= | --private] [--ignore=]... [--shred]')
-        opts.add_argumentless(['-E', '--erase'],                      help = 'Uninstall a pony\n'
-                                                             'slaves: [--pinpal= | --private] [--shred]')
-        opts.add_argumentless([      '--demote'],                     help = 'Demote pony to a dependency\n'
-                                                             'slaves: [--private]')
-        opts.add_argumentless([      '--promote'],                    help = 'Promote pony to explicitly installed\n'
-                                                             'slaves: [--private]')
-        opts.add_argumented(  ['-X', '--ride'],      arg = 'SCROLL',  help = 'Execute a scroll after best effort\n'
-                                                             'slaves: [--private]')
-        opts.add_argumentless(['-R', '--read'],                       help = 'Get scroll information\n'
-                                                             'slaves: (--list | [--info=...] [--written=])')
-        opts.add_argumentless(['-C', '--claim'],                      help = 'Claim one or more files as owned by a pony\n'
-                                                             'slaves: [--recursive | --entire] [--private] [--force]')
-        opts.add_argumentless(['-D', '--disclaim'],                   help = 'Disclaim one or more files as owned by a pony\n'
-                                                             'slaves: [--recursive] [--private]')
-        opts.add_argumented(  ['-A', '--archive'],   arg = 'ARCHIVE', help = 'Create an archive of everything that is currently installed.\n'
-                                                             'slaves: [--scrolls]')
-        opts.add_argumented(  ['--restore-archive'], arg = 'ARCHIVE', help = 'Roll back to an archived state of the system\n'
-                                                             'slaves: [--shared | --full | --old] [--downgrade | --upgrade] [--shred]')
-        opts.add_argumentless(['-N', '--clean'],                      help = 'Uninstall unneeded ponies\n'
-                                                             'slaves: [--private] [--shred]')
-        opts.add_argumentless(['-P', '--proofread'],                  help = 'Verify that a scroll is correct')
-        opts.add_argumentless(['-S', '--example-shot'],               help = 'Display example shot for scrolls\n'
-                                                             'slaves: [--viewer=] [--all-at-once]')
-        opts.add_argumentless(['-I', '--interactive'],                help = 'Start in interative graphical terminal mode\n'
-                                                                             '(supports installation and uninstallation only)\n'
-                                                                             'slaves: [--shred]')
-        opts.add_argumentless(['-3', '--sha3sum'],                    help = 'Calculate the SHA3 checksums for files\n'
-                                                                             '(do not expect files to be listed in order)')
-        
-        opts.add_argumentless(['-o', '--owner'],                      help = 'Find owner pony for file')
-        opts.add_argumented(  ['-w', '--written'],   arg = 'boolean', help = 'Search only for installed (\'yes\' or \'y\') or not installed (\'no\' or \'n\') ponies')
-        opts.add_argumented(  [      '--pinpal'],    arg = 'ROOT',    help = 'Mounted system for which to do installation or unstallation')
-        opts.add_argumentless(['-u', '--private'],                    help = 'Private pony installation')
-        opts.add_argumentless([      '--asdep'],                      help = 'Install pony as implicitly installed (a dependency)')
-        opts.add_argumentless([      '--asexplicit'],                 help = 'Install pony as explicitly installed (no longer a dependency)')
-        opts.add_argumentless([      '--nodep'],                      help = 'Do not install dependencies')
-        opts.add_argumentless([      '--force'],                      help = 'Ignore file claims')
-        opts.add_argumentless(['-i', '--ignore'],                     help = 'Ignore update of a pony')
-        opts.add_argumentless(['-l', '--list'],                       help = 'List files claimed (done at installation) for a pony')
-        opts.add_argumented(  ['-f', '--info'],      arg = 'FIELD',   help = 'Retrieve a specific scroll information field')
-        opts.add_argumentless([      '--recursive'],                  help = 'Recursively claim or disclaim directories')
-        opts.add_argumentless([      '--entire'],                     help = 'Recursively claim directories and their future content')
-        opts.add_argumentless(['-s', '--scrolls'],                    help = 'Do only archive scrolls, no installed files')
-        opts.add_argumentless([      '--shared'],                     help = 'Reinstall only ponies that are currently installed and archived')
-        opts.add_argumentless([      '--full'],                       help = 'Uninstall ponies that are not archived')
-        opts.add_argumentless([      '--old'],                        help = 'Reinstall only ponies that are currently not installed')
-        opts.add_argumentless([      '--downgrade'],                  help = 'Do only perform pony downgrades')
-        opts.add_argumentless([      '--upgrade'],                    help = 'Do only perform pony upgrades')
-        opts.add_argumentless([      '--shred'],                      help = 'Perform secure removal with `shred` when removing old files')
-        opts.add_argumentless([      '--no-verify'],                  help = 'Skip verification of signatures')
-        opts.add_argumentless(['-a', '--all-at-once'],                help = 'Display all example shots in one single process instance')
-        opts.add_argumented(  [      '--viewer'],    arg = 'VIEWER',  help = 'Select image viewer for example shots')
-        
-        if not opts.parse(args):
-            printerr(self.execprog + ': use of unrecognised option')
-            exit(1)
-        
-        longmap = {}
-        longmap['-v'] = '--version'
-        longmap['-h'] = '--help'
-        longmap['-c'] = '--copyright'
-        longmap['-B'] = '--bootstrap'
-        longmap['-F'] = '--find'
-        longmap['-W'] = '--write'
-        longmap['-U'] = '--update'
-        longmap['-E'] = '--erase'
-        longmap['-X'] = '--ride'
-        longmap['-R'] = '--read'
-        longmap['-C'] = '--claim'
-        longmap['-D'] = '--disclaim'
-        longmap['-A'] = '--archive'
-        longmap['-N'] = '--clean'
-        longmap['-P'] = '--proofread'
-        longmap['-S'] = '--example-shot'
-        longmap['-I'] = '--interactive'
-        longmap['-3'] = '--sha3sum'
-        longmap['-o'] = '--owner'
-        longmap['-w'] = '--written'
-        longmap['-u'] = '--private'
-        longmap['-i'] = '--ignore'
-        longmap['-l'] = '--list'
-        longmap['-f'] = '--info'
-        longmap['-s'] = '--scrolls'
-        longmap['-a'] = '--all-at-once'
-        
-        exclusives = set()
-        for opt in 'vhcBFWUEXRCDANPSI3':
-            exclusives.add('-' + opt)
-        exclusives.add('--restore-archive')
-        exclusives.add('--demote')
-        exclusives.add('--promote')
-        opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-        
-        for opt in opts.opts:
-            if (opt != '-i') and (opt != '-f'): # --ignore, --info
-                if (opts.opts[opt] is not None) and (len(opts.opts[opt]) > 1):
-                    option = opt
-                    if option in longmap:
-                        option += '(' + longmap[option] + ')'
-                    printerr('%s: %s is used multiple times' % (self.execprog, option))
-                    exit(1)
-        
-        allowed = set()
-        for opt in exclusives:
-            if opts.opts[opt] is not None:
-                allowed.add(opt)
-                break
-        
-        exclusives = set()
+        parse = opts.parse_args(args)
+        command = parse.COMMAND
+
         exit_value = 0
-        
-        def comma_split(values):
-            if values is None:
-                return None
-            rc = []
-            for value in values:
-                rc += value.split(',')
-            return rc
-        
+
+        if parse.COMMAND not in ['help', 'version', 'copyright']:
+            LibSpike.initialise(shred = parse.shred)
+
         try:
-            if opts.opts['-v'] is not None:
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                self.print_version()
-            
-            elif opts.opts['-h'] is not None:
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
+
+            if command == 'help':
                 opts.help()
                 exit_value = 3
-            
-            elif opts.opts['-c'] is not None:
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
+
+            elif command == 'version':
+                self.print_version()
+
+            elif command == 'copyright':
                 self.print_copyright()
-            
-            elif opts.opts['-3'] is not None:
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                LibSpike.initialise()
-                exit_value = self.sha3sum(opts.files)
-            
-            elif opts.opts['-B'] is not None:
-                allowed.add('--no-verify')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                LibSpike.initialise()
-                exit_value = self.bootstrap(opts.opts['--no-verify'] is None)
-            
-            elif opts.opts['-F'] is not None:
-                exclusives.add('-o')
-                exclusives.add('-w')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                allowed.add('-o')
-                allowed.add('-w')
-                if opts.opts['-w'] is not None:
-                    if opts.opts['-w'][0] not in ('y', 'yes', 'n', 'no'):
-                        printerr(self.execprog + ': only \'yes\',  \'y\', \'no\' and \'n\' are allowed for -w(--written)')
-                        exit(4)
-                    LibSpike.initialise()
-                    exit_value = self.find_scroll(opts.files,
-                                                  installed    = opts.opts['-w'][0][0] == 'y',
-                                                  notinstalled = opts.opts['-w'][0][0] == 'n')
-                elif opts.opts['-o'] is not None:
-                    opts.test_files(self.execprog, 1, None, True)
-                    LibSpike.initialise()
-                    exit_value = self.find_owner(opts.files)
+
+            elif command == 'sha3sum':
+                exit_value = self.sha3sum(parse.ARGS)
+
+            elif command == 'bootstrap':
+                exit_value = self.bootstrap(parse.no_verify)
+
+            elif command == 'find':
+                if parse.written:
+                    exit_value = self.find_scroll(parse.ARGS,
+                                                  installed    = parse.written == 'y',
+                                                  notinstalled = parse.written == 'n')
+                elif parse.owner:
+                    exit_value = self.find_owner(parse.ARGS)
                 else:
-                    LibSpike.initialise()
-                    exit_value = self.find_scroll(opts.files, installed = True, notinstalled = True)
-                
-            elif opts.opts['-W'] is not None:
-                exclusives.add('--pinpal')
-                exclusives.add('-u')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                exclusives = set()
-                exclusives.add('--asdep')
-                exclusives.add('--asexplicit')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                allowed.add('--pinpal')
-                allowed.add('-u')
-                allowed.add('--asdep')
-                allowed.add('--asexplicit')
-                allowed.add('--nodep')
-                allowed.add('--force')
-                allowed.add('--shred')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, None, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
-                exit_value = self.write(opts.files,
-                                        root         = opts.opts['--pinpal'][0] if opts.opts['--pinpal'] is not None else '/',
-                                        private      = opts.opts['-u'] is not None,
-                                        explicitness = 1  if opts.opts['--asexplicit'] is not None else
-                                                       -1 if opts.opts['--asdep']      is not None else 0,
-                                        nodep        = opts.opts['--nodep'] is not None,
-                                        force        = opts.opts['--force'] is not None)
-                
-            elif opts.opts['-U'] is not None:
-                allowed.add('--pinpal')
-                allowed.add('-i')
-                allowed.add('-u')
-                allowed.add('--shred')
-                exclusives.add('--pinpal')
-                exclusives.add('-u')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
-                exit_value = self.update(root    = opts.opts['--pinpal'][0] if opts.opts['--pinpal'] is not None else '/',
-                                         ignores = comma_split(opts.opts['-i']) if opts.opts['-i'] is not None else [],
-                                         private = opts.opts['-u'] is not None)
-                
-            elif opts.opts['-E'] is not None:
-                exclusives.add('--pinpal')
-                exclusives.add('-u')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                allowed.add('--pinpal')
-                allowed.add('-u')
-                allowed.add('--shred')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, None, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
-                exit_value = self.erase(opts.files,
-                                        root    = opts.opts['--pinpal'][0] if opts.opts['--pinpal'] is not None else '/',
-                                        private = opts.opts['-u'] is not None)
-                
-            elif opts.opts['-X'] is not None:
-                allowed.add('-u')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, 1, True)
-                LibSpike.initialise()
-                exit_value = self.ride(opts.files[0],
-                                       private = opts.opts['-u'] is not None)
-                
-            #elif opts.opts['--demote'] is not None: ### TODO: implement demote
-            #    allowed.add('-u')
-            #    opts.test_allowed(self.execprog, allowed, longmap, True)
-            #    opts.test_files(self.execprog, 1, None, True)
-            #    LibSpike.initialise()
-            #    exit_value = self.demote(opts.files,
-            #                             private = opts.opts['-u'] is not None)
-                
-            #elif opts.opts['--promote'] is not None: ### TODO: implement promote
-            #    allowed.add('-u')
-            #    opts.test_allowed(self.execprog, allowed, longmap, True)
-            #    opts.test_files(self.execprog, 1, None, True)
-            #    LibSpike.initialise()
-            #    exit_value = self.promote(opts.files,
-            #                              private = opts.opts['-u'] is not None)
-                
-            elif opts.opts['-R'] is not None:
-                exclusives.add('-l')
-                exclusives.add('-f')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                allowed.add('-l')
-                allowed.add('-f')
-                if opts.opts['-l'] is None:
-                    allowed.add('-w')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, None, True)
-                if opts.opts['-l'] is not None:
-                    exit_value = self.read_files(opts.files)
+                    exit_value = self.find_scroll(parse.ARGS, installed = True, notinstalled = True)
+
+            elif command == 'write':
+                exit_value = self.write(parse.ARGS,
+                                        root         = parse.pinpal if parse.pinpal else '/',
+                                        private      = parse.private,
+                                        explicitness = 1 if parse.asexplicit else -1 if parse.asdep else 0,
+                                        nodep        = parse.nodep,
+                                        force        = parse.force)
+
+            elif command == 'update':
+                exit_value = self.update(root    = parse.pinpal if parse.pinpal else '/',
+                                         ignores = parse.ignore if parse.ignore else [],
+                                         private = parse.private)
+
+            elif command == 'erase':
+                exit_value = self.erase(parse.ARGS,
+                                        root    = parse.pinpal if parse.pinpal else '/',
+                                        private = parse.private)
+
+            elif command == 'ride':
+                exit_value = self.ride(parse.ARGS[0],
+                                       private = parse.private)
+
+            #elif command == 'demote': ### TODO: implement demote
+            #    exit_value = self.demote(parse.ARGS,
+            #                             private = parse.private)
+
+            #elif command == 'promote': ### TODO: implement promote
+            #    exit_value = self.promote(parse.ARGS,
+            #                              private = parse.private)
+
+            elif command == 'read':
+                if parse.written:
+                    exit_value = self.read_info(parse.ARGS,
+                                                field        = parse.info if parse.info else [],
+                                                installed    = parse.written == 'y',
+                                                notinstalled = parse.written == 'n')
                 else:
-                    if opts.opts['-w'] is not None:
-                        if opts.opts['-w'][0] not in ('y', 'yes', 'n', 'no'):
-                            printerr(self.execprog + ': only \'yes\',  \'y\', \'no\' and \'n\' are allowed for -w(--written)')
-                            exit(4)
-                        LibSpike.initialise()
-                        exit_value = self.read_info(opts.files, field = comma_split(opts.opts['-f']),
-                                                    installed = opts.opts['-w'][0][0] == 'y',
-                                                    notinstalled = opts.opts['-w'][0][0] == 'n')
-                    else:
-                        LibSpike.initialise()
-                        exit_value = self.read_info(opts.files, field = comma_split(opts.opts['-f']))
-                    
-            elif opts.opts['-C'] is not None:
-                exclusives.add('--recursive')
-                exclusives.add('--entire')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                allowed.add('--recursive')
-                allowed.add('--entire')
-                allowed.add('-u')
-                allowed.add('--force')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 2, None, True)
-                LibSpike.initialise()
-                exit_value = self.claim(opts.files[:-1], opts.files[-1],
-                                        recursiveness = 1 if opts.opts['--recursive'] is not None else
-                                                        2 if opts.opts['--entire']    is not None else 0,
-                                        private       = opts.opts['-u'] is not None,
-                                        force         = opts.opts['--force'] is not None)
+                    exit_value = self.read_info(parse.ARGS,
+                                                field = parse.info if parse.info else [])
+
+            elif command == 'claim':
+                exit_value = self.claim(parse.ARGS[:-1], parse.ARGS[-1],
+                                        private       = parse.private,
+                                        recursiveness = 1 if parse.recursive else -1 if parse.entire else 0,
+                                        force         = parse.force)
+
+            elif command == 'disclaim':
+                exit_value = self.disclaim(parse.ARGS[:-1], parse.ARGS[-1],
+                                           private       = parse.private,
+                                           recursiveness = 1 if parse.recursive else -1 if parse.entire else 0,
+                                           force         = parse.force)
+
+            elif command == 'archive':
+                exit_value = self.archive(parse.ARGS[0],
+                                          scrolls = parse.scrolls)
                 
-            elif opts.opts['-D'] is not None:
-                allowed.add('--recursive')
-                allowed.add('-u')
-                self.test_allowed(opts.opts, allowed, longmap, True)
-                opts.test_files(self.execprog, 2, None, True)
-                LibSpike.initialise()
-                exit_value = self.disclaim(opts.files[:-1], opts.files[-1],
-                                           recursive = opts.opts['--recursive'] is not None,
-                                           private   = opts.opts['-u'] is not None)
-                
-            elif opts.opts['-A'] is not None:
-                allowed.add('-s')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                LibSpike.initialise()
-                exit_value = self.archive(opts.opts['-A'][0], scrolls = opts.opts['-s'] is not None)
-                
-            elif opts.opts['--restore-archive'] is not None:
-                exclusives.add('--shared')
-                exclusives.add('--full')
-                exclusives.add('--old')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                exclusives = set()
-                exclusives.add('--downgrade')
-                exclusives.add('--upgrade')
-                opts.test_exclusiveness(self.execprog, exclusives, longmap, True)
-                allowed.add('--shared')
-                allowed.add('--full')
-                allowed.add('--old')
-                allowed.add('--downgrade')
-                allowed.add('--upgrade')
-                allowed.add('--shred')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
-                exit_value = self.rollback(opts.opts['--restore-archive'][0],
-                                           keep      = opts.opts['--full'] is None,
-                                           skip      = opts.opts['--shared'] is not None,
-                                           gradeness = -1 if opts.opts['--downgrade'] is not None else
-                                                       1  if opts.opts['--upgrade']   is not None else 0)
-                
-            elif opts.opts['-P'] is not None:
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, None, True)
-                LibSpike.initialise()
-                exit_value = self.proofread(opts.files)
-            
-            elif opts.opts['-N'] is not None:
-                allowed.add('--private')
-                allowed.add('--shred')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, None, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
-                exit_value = self.clean(private = opts.opts['--private'] is not None)
-                
-            elif opts.opts['-S'] is not None:
-                allowed.add('--viewer')
-                allowed.add('-a')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 1, None, True)
+            elif command == 'restore_archive':
+                exit_value = self.rollback(parse.ARGS[0],
+                                           keep      = parse.full,
+                                           skip      = parse.shared,
+                                           gradeness = 1 if parse.downgrade else -1 if parse.upgrade else 0)
+
+            elif command == 'proofread':
+                exit_value = self.proofread(parse.ARGS)
+
+            elif command == 'clean':
+                exit_value = self.clean(private=parse.private)
+
+            elif command == 'example_shot':
                 env_display = os.environ['DISPLAY']
                 default_viewer = 'xloadimage' if (env_display is not None) and env_display.startsWith(':') else 'jfbview'
-                LibSpike.initialise()
-                exit_value = self.example_shot(opts.files,
-                                               viewer      = opts.opts['--viewer'][0] if opts.opts['--viewer'] is not None else default_viewer,
-                                               all_at_once = opts.opts['-a'] is not None)
-                
-            elif opts.opts['-I'] is not None:
-                allowed.add('--shred')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
+                exit_value = self.example_shot(parse.ARGS,
+                                               viewer      = parse.viewer if parse.viewer else default_viewer,
+                                               all_at_once = flags.all_at_once)
+
+            elif command == 'interactive':
                 exit_value = self.interactive()
-            
+
             else:
-                allowed.add('--shred')
-                opts.test_allowed(self.execprog, allowed, longmap, True)
-                opts.test_files(self.execprog, 0, 0, True)
-                LibSpike.initialise(shred = opts.opts['--shred'] is not None)
-                exit_value = self.interactive()
+                raise Exception('Argument list not properly handled')
         
         except Exception as err:
             exit_value = 255
