@@ -159,8 +159,8 @@ class LibSpike(LibSpikeHelper):
             aggregator(repo, 2)
         
         return 0
-    
-    
+
+
     @staticmethod
     def find_scroll(aggregator, patterns, installed = True, notinstalled = True):
         '''
@@ -176,25 +176,24 @@ class LibSpike(LibSpikeHelper):
         '''
         LibSpike.lock(False)
         
-        patterns = ScrollFinder.simplify_patterns(patterns)
-        
+        scrollfinder = ScrollFinder()
+
+        for pattern in patterns:
+            scrollfinder.add_pattern(pattern)
+
         # Get repository names and (path, found):s
         repositories = {}
         for superrepo in ['installed' if installed else None, 'repositories' if notinstalled else None]:
             if superrepo is not None:
                 for file in [SPIKE_PATH + superrepo] + LibSpike.get_confs(superrepo):
-                    ScrollFinder.get_repositories(repositories, file)
-        
-        ScrollFinder.match_repositories(repositories, patterns)
-        categories = ScrollFinder.get_categories(repositories)
-        ScrollFinder.match_categories(repositories, categories)
-        ScrollFinder.flatten_categories(categories)
-        scrolls = ScrollFinder.get_scrolls(categories)
-        ScrollFinder.match_and_report(categories, scrolls, aggregator)
-        
+                    if os.path.isdir(file):
+                        scrollfinder.add_repositories_directory(file)
+
+        scrollfinder.find_matches(aggregator)
+
         return 0
-    
-    
+
+
     @staticmethod
     def find_owner(aggregator, files):
         '''
