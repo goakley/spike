@@ -21,7 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 from algorithmic.algospike import *
 from algorithmic.scrlver import *
 from auxiliary.scrollmagick import *
-from auxiliary.auxfunctions import *
 
 
 
@@ -142,7 +141,7 @@ class Installer():
             if value is not None:
                 for val in value if isinstance(value, list) else [value]:
                     if val is not None:
-                        dict_append(map, val, scroll)
+                        fmap.setdefault(val, []).append(scroll)
     
     
     @staticmethod
@@ -202,7 +201,7 @@ class Installer():
                         if (ScrollVersion(deps.name) in needed) and (deps not in needed):
                             return 8
                         deps.intersection_add(needed)
-                        dict_append(requirer, deps.name, scroll.scroll)
+                        requirer.setdefault(deps.name, []).append(scroll.scroll)
         return 0
     
     

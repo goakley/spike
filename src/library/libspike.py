@@ -209,7 +209,7 @@ class LibSpike(LibSpikeHelper):
         '''
         LibSpike.lock(False)
         
-        origfiles = make_dictionary([(os.path.abspath(file), file) for file in files])
+        origfiles = {os.path.abspath(file): file for file in files}
         files = [os.path.abspath(file) for file in files]
         DB = DBCtrl(SPIKE_PATH)
         agg = lambda file, scroll : aggregator(origfiles[file], scroll)
@@ -286,7 +286,7 @@ class LibSpike(LibSpikeHelper):
         
         scroll_field = {}
         installing = {}
-        new_scrolls = make_dictionary([(scroll, None) for scroll in scrolls])
+        new_scrolls = {scroll: None for scroll in scrolls}
         
         # Load information about already installed scrolls
         # TODO this should be better using spikedb
@@ -594,8 +594,7 @@ class LibSpike(LibSpikeHelper):
                     # Get shared and exclusive files
                     sink = DB.open_db(private, DB_FILE_ID, DB_PONY_ID).fetch([], id_fileid[id])
                     table = tablise({}, sink, DB_PONY_ID, None)
-                    (shared, exclusive) = ([], [])
-                    list_split(table.keys(), lambda x : exclusive if len(x) == 1 else shared)
+                    (exclusive, shared) = partition(lambda x: len(x) == 1, table.keys())
                     
                     # Disclaim shared files
                     if len(shared) > 0:
@@ -606,7 +605,7 @@ class LibSpike(LibSpikeHelper):
                             for ponyid in table[fileid]:
                                 if ponyid != id:
                                     pairs.append((fileid, ponyid))
-                        update(DB.open_db(private, DB_FILE_ID, DB_PONY_ID), [], shared, pairs)
+                        DB.open_db(private, DB_FILE_ID, DB_PONY_ID).update([], shared, pairs)
                     
                     # Remove exclusive files
                     if len(exclusive) > 0:
@@ -695,7 +694,7 @@ class LibSpike(LibSpikeHelper):
                     deps.add(dependency)
                     if DBCtrl.value_convert(dependee, CONVERT_INT) != id:
                         pairs.append((dependency, dependee))
-                update(db, [], list(deps), pairs)
+                db.update([], list(deps), pairs)
                 aggregator(scroll, len(id_fileid[id]) + 2, endstate)
                 
                 # Remove pony from database
@@ -808,11 +807,11 @@ class LibSpike(LibSpikeHelper):
                 aggregator(scroll, None)
                 error[0] = 7
             else:
-                dict_append(fileid_scrolls, fileid, scroll)
+                fileid_scrolls.setdefault(fileid, []).append(scroll)
         error = max(error[0], LibSpikeHelper.joined_lookup(agg, ponies, [DB_PONY_NAME, DB_PONY_ID, DB_FILE_ID]))
         
         # Fetch file name lengths for files
-        sink = fetch(DB, DB_FILE_ID, DB_FILE_NAME(-1), [], fileid_scrolls.keys())
+        sink = DB.fetch(DB_FILE_ID, DB_FILE_NAME(-1), [], fileid_scrolls.keys())
         
         # Map file name length → file
         (file_fileid, nones) = ({}, set())
@@ -846,7 +845,7 @@ class LibSpike(LibSpikeHelper):
                         if fileid not in fileid_scroll_files:
                             fileid_scroll_files[fileid] = []
                         fileid_scroll_files[fileid].append((scroll, _file))
-            fetch(DB, DB_FILE_ID, DB_FILE_NAME(file), Sink(), file_fileif[file])
+            DB.fetch(DB_FILE_ID, DB_FILE_NAME(file), Sink(), file_fileif[file])
         
         # Identify --entire claims and send (pony, file name, entire)
         nones = set()
@@ -864,7 +863,7 @@ class LibSpike(LibSpikeHelper):
                 else:
                     for (scroll, filename) in fileid_scroll_files[fileid]:
                         aggregator(scroll, filename, entire is not None)
-        fetch(DB, DB_FILE_ID, DB_FILE_ENTIRE, Sink(), fileids)
+        DB.fetch(DB_FILE_ID, DB_FILE_ENTIRE, Sink(), fileids)
         
         return error
     
@@ -1165,8 +1164,9 @@ class LibSpike(LibSpikeHelper):
         file_scrolls = DBCtrl.transpose(None, sink, DB_PONY_NAME, None)
         
         # Split file names into group: files claimed to one pony (exclusive), files claimed to multiple ponies (shared)
-        (exclusive, shared) = ([], [])
-        list_split(file_scrolls.keys(), lambda x : exclusive if len(file_scrolls[x]) == 1 else shared, lambda x : pony not in file_scrolls[x])
+        (exclusive, shared) = partition(lambda x: len(file_scrolls[x]) == 1,
+                                        [f for f in file_scrolls.keys()
+                                         if pony not in file_scrolls[f]])
         
         # Get the ID of the specified pony
         sink = DB.open_db(private, DB_PONY_NAME, DB_PONY_ID).fetch([], [pony])
@@ -1195,7 +1195,7 @@ class LibSpike(LibSpikeHelper):
                 if n is None:
                     error_sink.append((fileid, n))
                 else:
-                    dict_append(ms, DBCtrl.raw_int(convert_value(n, CONVERT_INT)), fileid)
+                    ns.setdefault(DBCtrl.raw_int(convert_value(n, CONVERT_INT)), []).append(fileid)
             
             # Remove files from databases
             for n in ns.keys():
@@ -1213,7 +1213,7 @@ class LibSpike(LibSpikeHelper):
                 if id_fileid[1] not in raw_ids:
                     pairs.append(id_fileid)
             # but keep other files for the scrolls
-            update(db, sink, [_id], pairs)
+            db.update(sink, [_id], pairs)
         
         # Disclaim shared files
         if len(shared) > 0:
@@ -1232,7 +1232,7 @@ class LibSpike(LibSpikeHelper):
                     files.add(file)
             
             # Remove the file from the pony, but not from the other ponies
-            update(db, [], list(files), pairs)
+            db.update([], list(files), pairs)
         
         return 0 if len(error_sink) == 0 else 27
     
@@ -1485,7 +1485,7 @@ class LibSpike(LibSpikeHelper):
             deps_id[deps].add(DBCtrl.value_convert(id, CONVERT_INT))
         
         # Forget explicitly installed ponies
-        iterator_remove(deps_id, lambda deps : deps_id[deps])
+        deps_id = {k: v for k, v in deps_id if deps_id[k]}
         
         # Get minimal set of ponies that must be removed at the same time that can be cleaned (Not the normal meaning of 'clique')
         def get_clique(deps, clique, visited):

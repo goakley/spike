@@ -21,8 +21,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 import os
 import re
 
-from auxiliary.auxfunctions import *
-
 
 
 class ScrollFinder():
@@ -181,7 +179,7 @@ class ScrollFinder():
                 sfile = '%s/%s' % (cdir, scroll)
                 if os.path.isfile(sfile) and scroll.endswith('.scroll') and not scroll.startswith('.'):
                     scroll = scroll[:-len('.scroll')]
-                    dict_append(scrolls, cat, (scroll, '%s/%s' % (cat, scroll)))
+                    scrolls.setdefault(cat, []).append((scroll, '%s/%s' % (cat, scroll)))
         return scrolls
     
     

@@ -133,6 +133,21 @@ class DBCtrl():
         return SpikeDB(db, value[1])
     
     
+    def fetch(self, from_type, to_type, sink, keys):
+        '''
+        Fetches values from both the public and private version of a database
+        
+        @param   from_type:(str,int,int)          The from type side of the database
+        @param   to_type:(str,int,int)            The to type side of the database
+        @param   sink:append((str, bytes?))→void  Fetch sink
+        @param   keys:list<str>                   Keys for which to fetch values
+        @return  sink:                            The sink is returned
+        '''
+        dbctrl.open_db(False, from_type, to_type).fetch(sink, keys)
+        dbctrl.open_db(True,  from_type, to_type).fetch(sink, keys)
+        return sink
+    
+    
     def joined_fetch(self, aggregator, input, types, private = None):
         '''
         Perform a database lookup by joining tables

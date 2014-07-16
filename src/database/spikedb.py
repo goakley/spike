@@ -191,6 +191,18 @@ class SpikeDB():
                 SpikeDB.__make(filename, 1 << lblen, buckets[lblen])
     
     
+    def update(self, remove_sink, remove_keys, insert_pairs):
+        '''
+        Update the database by removing old keys and inserting new pairs
+        
+        @param  remove_sink:append(str)→void     Sink for keys that cannot be found for removal
+        @param  remove_keys:list<str>            Keys to remove
+        @param  insert_pairs:list<(str, bytes)>  Key–value pairs to insert
+        '''
+        db.remove(remove_sink, remove_keys)
+        db.insert(insert_pairs)
+    
+    
     def make(self, pairs):
         '''
         Build a database from the ground

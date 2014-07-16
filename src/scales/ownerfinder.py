@@ -22,7 +22,6 @@ import os
 
 from database.dbctrl import *
 from library.libspikehelper import *
-from auxiliary.auxfunctions import *
 
 
 
@@ -48,16 +47,16 @@ class OwnerFinder():
                 # Send and store found file
                 aggregator(file, scroll)
                 found.add(file)
-                dict_add(owners, file, scroll)
+                owners.setdefault(file, set()).add(scroll)
                 
             # List all superpaths to files, so we can check the directories if they are recursive
             has_root = file.startswith(os.sep)
             parts = (file[1:] if has_root else file).split(os.sep)
             if has_root:
-                dict_append(dirs, os.sep, file)
+                dirs.setdefault(os.sep, []).append(file)
             for i in range(len(parts) - 1):
                 dir = (os.sep + os.sep.join(parts[:i + 1])) if has_root else os.sep.join(parts[:i + 1])
-                dict_append(dirs, dir, file)
+                dirs.setdefault(dir, []).append(file)
         
         return LibSpikeHelper.joined_lookup(agg, files, [DB_FILE_NAME(-1), DB_FILE_ID, DB_PONY_ID, DB_PONY_NAME])
     
@@ -72,7 +71,7 @@ class OwnerFinder():
         @return  :byte                    Error code, 0 if none
         '''
         # Fetch file ID for filenames
-        sink = fetch(DB, DB_FILE_NAME, DB_FILE_ID, [], dirs.keys())
+        sink = DB.fetch(DB_FILE_NAME, DB_FILE_ID, [], dirs.keys())
         
         # Rekey superpaths to use ID rather then filename and discard unfound superpath
         nones = set()
@@ -109,7 +108,7 @@ class OwnerFinder():
                     did_find.add(dir)
                     for file in dirs[dir]:
                         found.add(file)
-        fetch(DB, DB_FILE_ID, DB_FILE_ENTIRE, Sink(), dirs.keys())
+        DB.fetch(DB_FILE_ID, DB_FILE_ENTIRE, Sink(), dirs.keys())
     
     
     @staticmethod
@@ -145,7 +144,7 @@ class OwnerFinder():
                 for file in dirs[dirid]:
                     if (file not in owners) or (scroll not in owners[file]):
                         aggregator(file, scroll)
-                        dict_add(owners, file, scroll)
+                        owners.setdefault(file, set()).add(scroll)
         _error = LibSpikeHelper.joined_lookup(agg, list(did_find), [DB_FILE_ID, DB_PONY_ID, DB_PONY_NAME])
         return max(error, _error)
     
