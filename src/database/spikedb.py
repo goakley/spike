@@ -249,7 +249,7 @@ class SpikeDB():
         @return  :dict<int, list<str>>  Map for key initials to key buckets
         '''
         buckets = {}
-        for key in unique(sorted(keys)):
+        for key in sorted(set(keys)):
             pos = 0
             initials = ''
             while '/' in key[pos : -1]:

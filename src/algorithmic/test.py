@@ -37,11 +37,6 @@ def error(message, ok = False):
 
 
 
-got = unique('a a d d d d d d d d d f i i i i i j j k k k l m n s s s s s s s s s v v'.split(' '))
-error('algospike.unique does not work', got == 'a d f i j k l m n s v'.split(' '))
-
-
-
 items = 'a a d d d d d d d d d f i i i i i j j k k k l m n s s s s s s s s s v v'.split(' ')
 got = bin_search(items, 'i', 0, len(items) - 1)
 error('algospike.bin_search, searching for multiexisting, does not work', 12 <= got <= 16)

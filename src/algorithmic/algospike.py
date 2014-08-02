@@ -27,22 +27,6 @@ can be used through out Spike.
 '''
 
 
-def unique(sorted):
-    '''
-    Duplicate a sorted list and remove all duplicates
-    
-    @param   sorted:list<¿E?>  A sorted list, without leading `None`:s, more precisely, all equals elements must be grouped
-    @return  :list<¿E?>        `sorted` with all duplicates removed, for example: aaabbc → abc
-    '''
-    rc = []
-    last = None
-    for element in sorted:
-        if element != last:
-            last = element
-            rc.append(element)
-    return rc
-
-
 def bin_search(list, item, min, max):
     '''
     Find the index of an item in a list, with time complexity 𝓞(log n) and memory complexity 𝓞(1)

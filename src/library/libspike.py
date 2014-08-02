@@ -1067,9 +1067,7 @@ class LibSpike(LibSpikeHelper):
             # Assign ID to new files
             (fileid_len, len_fileid_name) = ([], {})
             db = DB.open_db(private, DB_PONY_ID, DB_FILE_ID)
-            ids = [fileid for (_, fileid) in db.list([])]
-            ids.sort()
-            ids = unique(ids)
+            ids = sorted({fileid for (_, fileid) in db.list([])})
             fid = ids[-1] + 1
             start = ((1 << ((DB_SIZE_FILEID << 3) - 1)) if private else 0) -1 
             (last, jump) = (start, 0)
@@ -1183,7 +1181,7 @@ class LibSpike(LibSpikeHelper):
             # Fetch file ID → file names
             sink = DB.open_db(private, DB_FILE_NAME(-1), DB_FILE_ID).fetch([], exclusiveNames)
             (raw_ids, fileids) = (set(), [])
-            for fileid in unique(sorted([item[1] for item in sink])):
+            for fileid in sorted({item[1] for item in sink}):
                 raw_ids.add(fileid)
                 fileids.append(DBCtrl.value_convert(fileid, CONVERT_STR))
             
